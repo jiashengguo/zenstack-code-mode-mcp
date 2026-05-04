@@ -1,4 +1,7 @@
-import { McpServer, StdioServerTransport } from "@modelcontextprotocol/server";
+import { randomUUID } from "node:crypto";
+import { createMcpExpressApp } from "@modelcontextprotocol/express";
+import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
+import { McpServer, isInitializeRequest } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "fs";
 import { join, dirname } from "path";
@@ -420,7 +423,7 @@ server.registerTool(
   "execute",
   {
     description:
-      'Execute a query operation on the database. Use the "check" tool first to validate the call, then execute it.',
+      'Execute a query operation on the database. You MUST use the "check" tool first to validate the query before calling this tool',
     inputSchema: z.object({
       model: z.string().describe('The model name (e.g., "user", "post")'),
       operation: z
@@ -469,13 +472,44 @@ server.registerTool(
 
 // ── Start Server ───────────────────────────────────────────────────────
 
-async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("ZenStack MCP server running on stdio");
-}
+import type { Request, Response } from "./express-types";
+const app = createMcpExpressApp();
+const transports: Map<string, NodeStreamableHTTPServerTransport> = new Map();
 
-main().catch((error) => {
-  console.error("Failed to start MCP server:", error);
-  process.exit(1);
+app.post("/mcp", async (req: Request, res: Response) => {
+  const sessionId = req.headers["mcp-session-id"] as string | undefined;
+
+  if (sessionId && transports.has(sessionId)) {
+    // Reuse existing transport for this session
+    await transports.get(sessionId)!.handleRequest(req, res, req.body);
+  } else if (!sessionId && isInitializeRequest(req.body)) {
+    // New session: create transport and connect server
+    const transport: NodeStreamableHTTPServerTransport =
+      new NodeStreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (sid: string): void => {
+          transports.set(sid, transport);
+        },
+      });
+    transport.onclose = () => {
+      if (transport.sessionId) transports.delete(transport.sessionId);
+    };
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  } else {
+    res.status(400).json({
+      jsonrpc: "2.0",
+      error: {
+        code: -32000,
+        message:
+          "Invalid request: missing or invalid session ID, or not an initialize request",
+      },
+      id: null,
+    });
+  }
+});
+
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+app.listen(PORT, () => {
+  console.error(`ZenStack MCP server running on http://localhost:${PORT}/mcp`);
 });

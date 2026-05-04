@@ -6,11 +6,13 @@
   "scripts": {
     "dev": "tsx main.ts",
     "mcp": "tsx src/mcp-server.ts",
-    "generate": "npx zen generate"
+    "generate": "npx zen generate",
+    "typecheck": "tsc --noEmit"
   },
   "license": "ISC",
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.6",
     "@types/node": "^25.6.0",
     "@zenstackhq/cli": "^3.6.4",
     "tsx": "^4.21.0",
@@ -18,6 +20,8 @@
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",
+    "@modelcontextprotocol/express": "2.0.0-alpha.2",
+    "@modelcontextprotocol/node": "2.0.0-alpha.2",
     "@modelcontextprotocol/server": "^2.0.0-alpha.2",
     "@zenstackhq/orm": "^3.6.4",
     "better-sqlite3": "^12.9.0",
