@@ -1,16 +1,19 @@
 {
-  "name": "zenstack-app",
+  "name": "zenstack-v3-mcp",
   "version": "1.0.0",
-  "description": "Scaffolded with create-zenstack",
+  "description": "Remote MCP server with Auth for ZenStack v3",
   "type": "module",
   "scripts": {
-    "dev": "tsx main.ts",
-    "mcp": "tsx src/mcp-server.ts",
+    "dev": "tsx src/mcp-server.ts",
+    "build": "npm run typecheck && npm run generate && npm run db:push",
+    "seed": "tsx src/seed.ts",
     "generate": "npx zen generate",
+    "db:push": "zen db push",
     "typecheck": "tsc --noEmit"
   },
   "license": "ISC",
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.6",
     "@types/node": "^25.6.0",
@@ -24,7 +27,10 @@
     "@modelcontextprotocol/node": "2.0.0-alpha.2",
     "@modelcontextprotocol/server": "^2.0.0-alpha.2",
     "@zenstackhq/orm": "^3.6.4",
+    "@zenstackhq/plugin-policy": "^3.6.4",
+    "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.9.0",
+    "express": "^5.2.1",
     "zod": "^4.1.0"
   }
 }

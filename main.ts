@@ -12,6 +12,7 @@ async function main() {
     const user = await db.user.create({
         data: {
             email: 'test@zenstack.dev',
+            password: 'dummy_password',
             posts: {
                 create: [
                     {

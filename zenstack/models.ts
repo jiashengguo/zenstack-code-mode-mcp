@@ -15,3 +15,19 @@ export type User = $ModelResult<$Schema, "User">;
  * Post model
  */
 export type Post = $ModelResult<$Schema, "Post">;
+/**
+ * OAuth2 registered clients
+ */
+export type OAuthClient = $ModelResult<$Schema, "OAuthClient">;
+/**
+ * OAuth2 authorization codes
+ */
+export type AuthorizationCode = $ModelResult<$Schema, "AuthorizationCode">;
+/**
+ * OAuth2 access tokens
+ */
+export type AccessToken = $ModelResult<$Schema, "AccessToken">;
+/**
+ * OAuth2 refresh tokens
+ */
+export type RefreshToken = $ModelResult<$Schema, "RefreshToken">;

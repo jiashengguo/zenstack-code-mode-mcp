@@ -6,11 +6,25 @@ datasource db {
     url = 'file:./dev.db'
 }
 
+plugin policy {
+    provider = "@zenstackhq/plugin-policy"
+}
+
 /// User model
 model User {
-    id       String @id @default(cuid())
-    email    String @unique @email @length(6, 32)
-    posts    Post[]
+    id            String              @id @default(cuid())
+    email         String              @unique @email @length(6, 32)
+    password      String              @omit
+    posts         Post[]
+
+    // Auth relations
+    authCodes     AuthorizationCode[]
+    accessTokens  AccessToken[]
+    refreshTokens RefreshToken[]
+
+    // Policy rules
+    @@allow('all', auth() == this)
+    @@allow('read', auth() != null)
 }
 
 /// Post model
@@ -21,6 +35,68 @@ model Post {
     title     String   @length(1, 256)
     content   String
     published Boolean  @default(false)
+    viewCount Int      @default(0)
     author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
     authorId  String
+
+    @@allow('all', auth() == author)
+    // logged-in users can view published posts
+    @@allow('read', auth() != null && published)
+}
+
+/// OAuth2 registered clients
+model OAuthClient {
+    id                    String   @id @default(cuid())
+    clientId              String   @unique
+    clientSecret          String?
+    clientName            String?
+    redirectUris          String   // JSON array of redirect URIs
+    grantTypes            String   // JSON array of grant types
+    responseTypes         String   // JSON array of response types
+    scope                 String?
+    clientIdIssuedAt      Int
+    clientSecretExpiresAt Int      @default(0)
+    createdAt             DateTime @default(now())
+    updatedAt             DateTime @updatedAt
+}
+
+/// OAuth2 authorization codes
+model AuthorizationCode {
+    id            String   @id @default(cuid())
+    code          String   @unique
+    clientId      String
+    userId        String
+    codeChallenge String
+    redirectUri   String
+    expiresAt     DateTime
+    scopes        String   // JSON array of scopes
+    createdAt     DateTime @default(now())
+
+    user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// OAuth2 access tokens
+model AccessToken {
+    id        String   @id @default(cuid())
+    token     String   @unique
+    clientId  String
+    userId    String
+    scopes    String   // JSON array of scopes
+    expiresAt DateTime
+    createdAt DateTime @default(now())
+
+    user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// OAuth2 refresh tokens
+model RefreshToken {
+    id        String   @id @default(cuid())
+    token     String   @unique
+    clientId  String
+    userId    String
+    scopes    String   // JSON array of scopes
+    expiresAt DateTime
+    createdAt DateTime @default(now())
+
+    user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

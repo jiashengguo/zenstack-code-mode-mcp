@@ -3,3 +3,6 @@ ignoredBuiltDependencies:
   - better-sqlite3
   - esbuild
   - prisma
+
+onlyBuiltDependencies:
+  - bcrypt

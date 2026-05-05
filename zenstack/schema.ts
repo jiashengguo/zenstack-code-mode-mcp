@@ -27,13 +27,41 @@ export class SchemaType implements SchemaDef {
                     unique: true,
                     attributes: [{ name: "@unique" }, { name: "@email" }, { name: "@length", args: [{ name: "min", value: ExpressionUtils.literal(6) }, { name: "max", value: ExpressionUtils.literal(32) }] }] as readonly AttributeApplication[]
                 },
+                password: {
+                    name: "password",
+                    type: "String",
+                    omit: true,
+                    attributes: [{ name: "@omit" }] as readonly AttributeApplication[]
+                },
                 posts: {
                     name: "posts",
                     type: "Post",
                     array: true,
                     relation: { opposite: "author" }
+                },
+                authCodes: {
+                    name: "authCodes",
+                    type: "AuthorizationCode",
+                    array: true,
+                    relation: { opposite: "user" }
+                },
+                accessTokens: {
+                    name: "accessTokens",
+                    type: "AccessToken",
+                    array: true,
+                    relation: { opposite: "user" }
+                },
+                refreshTokens: {
+                    name: "refreshTokens",
+                    type: "RefreshToken",
+                    array: true,
+                    relation: { opposite: "user" }
                 }
             },
+            attributes: [
+                { name: "@@allow", args: [{ name: "operation", value: ExpressionUtils.literal("all") }, { name: "condition", value: ExpressionUtils.binary(ExpressionUtils.call("auth"), "==", ExpressionUtils._this()) }] },
+                { name: "@@allow", args: [{ name: "operation", value: ExpressionUtils.literal("read") }, { name: "condition", value: ExpressionUtils.binary(ExpressionUtils.call("auth"), "!=", ExpressionUtils._null()) }] }
+            ] as readonly AttributeApplication[],
             idFields: ["id"],
             uniqueFields: {
                 id: { type: "String" },
@@ -77,6 +105,12 @@ export class SchemaType implements SchemaDef {
                     attributes: [{ name: "@default", args: [{ name: "value", value: ExpressionUtils.literal(false) }] }] as readonly AttributeApplication[],
                     default: false as FieldDefault
                 },
+                viewCount: {
+                    name: "viewCount",
+                    type: "Int",
+                    attributes: [{ name: "@default", args: [{ name: "value", value: ExpressionUtils.literal(0) }] }] as readonly AttributeApplication[],
+                    default: 0 as FieldDefault
+                },
                 author: {
                     name: "author",
                     type: "User",
@@ -91,9 +125,255 @@ export class SchemaType implements SchemaDef {
                     ] as readonly string[]
                 }
             },
+            attributes: [
+                { name: "@@allow", args: [{ name: "operation", value: ExpressionUtils.literal("all") }, { name: "condition", value: ExpressionUtils.binary(ExpressionUtils.call("auth"), "==", ExpressionUtils.field("author")) }] },
+                { name: "@@allow", args: [{ name: "operation", value: ExpressionUtils.literal("read") }, { name: "condition", value: ExpressionUtils.binary(ExpressionUtils.binary(ExpressionUtils.call("auth"), "!=", ExpressionUtils._null()), "&&", ExpressionUtils.field("published")) }] }
+            ] as readonly AttributeApplication[],
             idFields: ["id"],
             uniqueFields: {
                 id: { type: "String" }
+            }
+        },
+        OAuthClient: {
+            name: "OAuthClient",
+            fields: {
+                id: {
+                    name: "id",
+                    type: "String",
+                    id: true,
+                    attributes: [{ name: "@id" }, { name: "@default", args: [{ name: "value", value: ExpressionUtils.call("cuid") }] }] as readonly AttributeApplication[],
+                    default: ExpressionUtils.call("cuid") as FieldDefault
+                },
+                clientId: {
+                    name: "clientId",
+                    type: "String",
+                    unique: true,
+                    attributes: [{ name: "@unique" }] as readonly AttributeApplication[]
+                },
+                clientSecret: {
+                    name: "clientSecret",
+                    type: "String",
+                    optional: true
+                },
+                clientName: {
+                    name: "clientName",
+                    type: "String",
+                    optional: true
+                },
+                redirectUris: {
+                    name: "redirectUris",
+                    type: "String"
+                },
+                grantTypes: {
+                    name: "grantTypes",
+                    type: "String"
+                },
+                responseTypes: {
+                    name: "responseTypes",
+                    type: "String"
+                },
+                scope: {
+                    name: "scope",
+                    type: "String",
+                    optional: true
+                },
+                clientIdIssuedAt: {
+                    name: "clientIdIssuedAt",
+                    type: "Int"
+                },
+                clientSecretExpiresAt: {
+                    name: "clientSecretExpiresAt",
+                    type: "Int",
+                    attributes: [{ name: "@default", args: [{ name: "value", value: ExpressionUtils.literal(0) }] }] as readonly AttributeApplication[],
+                    default: 0 as FieldDefault
+                },
+                createdAt: {
+                    name: "createdAt",
+                    type: "DateTime",
+                    attributes: [{ name: "@default", args: [{ name: "value", value: ExpressionUtils.call("now") }] }] as readonly AttributeApplication[],
+                    default: ExpressionUtils.call("now") as FieldDefault
+                },
+                updatedAt: {
+                    name: "updatedAt",
+                    type: "DateTime",
+                    updatedAt: true,
+                    attributes: [{ name: "@updatedAt" }] as readonly AttributeApplication[]
+                }
+            },
+            idFields: ["id"],
+            uniqueFields: {
+                id: { type: "String" },
+                clientId: { type: "String" }
+            }
+        },
+        AuthorizationCode: {
+            name: "AuthorizationCode",
+            fields: {
+                id: {
+                    name: "id",
+                    type: "String",
+                    id: true,
+                    attributes: [{ name: "@id" }, { name: "@default", args: [{ name: "value", value: ExpressionUtils.call("cuid") }] }] as readonly AttributeApplication[],
+                    default: ExpressionUtils.call("cuid") as FieldDefault
+                },
+                code: {
+                    name: "code",
+                    type: "String",
+                    unique: true,
+                    attributes: [{ name: "@unique" }] as readonly AttributeApplication[]
+                },
+                clientId: {
+                    name: "clientId",
+                    type: "String"
+                },
+                userId: {
+                    name: "userId",
+                    type: "String",
+                    foreignKeyFor: [
+                        "user"
+                    ] as readonly string[]
+                },
+                codeChallenge: {
+                    name: "codeChallenge",
+                    type: "String"
+                },
+                redirectUri: {
+                    name: "redirectUri",
+                    type: "String"
+                },
+                expiresAt: {
+                    name: "expiresAt",
+                    type: "DateTime"
+                },
+                scopes: {
+                    name: "scopes",
+                    type: "String"
+                },
+                createdAt: {
+                    name: "createdAt",
+                    type: "DateTime",
+                    attributes: [{ name: "@default", args: [{ name: "value", value: ExpressionUtils.call("now") }] }] as readonly AttributeApplication[],
+                    default: ExpressionUtils.call("now") as FieldDefault
+                },
+                user: {
+                    name: "user",
+                    type: "User",
+                    attributes: [{ name: "@relation", args: [{ name: "fields", value: ExpressionUtils.array("String", [ExpressionUtils.field("userId")]) }, { name: "references", value: ExpressionUtils.array("String", [ExpressionUtils.field("id")]) }, { name: "onDelete", value: ExpressionUtils.literal("Cascade") }] }] as readonly AttributeApplication[],
+                    relation: { opposite: "authCodes", fields: ["userId"], references: ["id"], onDelete: "Cascade" }
+                }
+            },
+            idFields: ["id"],
+            uniqueFields: {
+                id: { type: "String" },
+                code: { type: "String" }
+            }
+        },
+        AccessToken: {
+            name: "AccessToken",
+            fields: {
+                id: {
+                    name: "id",
+                    type: "String",
+                    id: true,
+                    attributes: [{ name: "@id" }, { name: "@default", args: [{ name: "value", value: ExpressionUtils.call("cuid") }] }] as readonly AttributeApplication[],
+                    default: ExpressionUtils.call("cuid") as FieldDefault
+                },
+                token: {
+                    name: "token",
+                    type: "String",
+                    unique: true,
+                    attributes: [{ name: "@unique" }] as readonly AttributeApplication[]
+                },
+                clientId: {
+                    name: "clientId",
+                    type: "String"
+                },
+                userId: {
+                    name: "userId",
+                    type: "String",
+                    foreignKeyFor: [
+                        "user"
+                    ] as readonly string[]
+                },
+                scopes: {
+                    name: "scopes",
+                    type: "String"
+                },
+                expiresAt: {
+                    name: "expiresAt",
+                    type: "DateTime"
+                },
+                createdAt: {
+                    name: "createdAt",
+                    type: "DateTime",
+                    attributes: [{ name: "@default", args: [{ name: "value", value: ExpressionUtils.call("now") }] }] as readonly AttributeApplication[],
+                    default: ExpressionUtils.call("now") as FieldDefault
+                },
+                user: {
+                    name: "user",
+                    type: "User",
+                    attributes: [{ name: "@relation", args: [{ name: "fields", value: ExpressionUtils.array("String", [ExpressionUtils.field("userId")]) }, { name: "references", value: ExpressionUtils.array("String", [ExpressionUtils.field("id")]) }, { name: "onDelete", value: ExpressionUtils.literal("Cascade") }] }] as readonly AttributeApplication[],
+                    relation: { opposite: "accessTokens", fields: ["userId"], references: ["id"], onDelete: "Cascade" }
+                }
+            },
+            idFields: ["id"],
+            uniqueFields: {
+                id: { type: "String" },
+                token: { type: "String" }
+            }
+        },
+        RefreshToken: {
+            name: "RefreshToken",
+            fields: {
+                id: {
+                    name: "id",
+                    type: "String",
+                    id: true,
+                    attributes: [{ name: "@id" }, { name: "@default", args: [{ name: "value", value: ExpressionUtils.call("cuid") }] }] as readonly AttributeApplication[],
+                    default: ExpressionUtils.call("cuid") as FieldDefault
+                },
+                token: {
+                    name: "token",
+                    type: "String",
+                    unique: true,
+                    attributes: [{ name: "@unique" }] as readonly AttributeApplication[]
+                },
+                clientId: {
+                    name: "clientId",
+                    type: "String"
+                },
+                userId: {
+                    name: "userId",
+                    type: "String",
+                    foreignKeyFor: [
+                        "user"
+                    ] as readonly string[]
+                },
+                scopes: {
+                    name: "scopes",
+                    type: "String"
+                },
+                expiresAt: {
+                    name: "expiresAt",
+                    type: "DateTime"
+                },
+                createdAt: {
+                    name: "createdAt",
+                    type: "DateTime",
+                    attributes: [{ name: "@default", args: [{ name: "value", value: ExpressionUtils.call("now") }] }] as readonly AttributeApplication[],
+                    default: ExpressionUtils.call("now") as FieldDefault
+                },
+                user: {
+                    name: "user",
+                    type: "User",
+                    attributes: [{ name: "@relation", args: [{ name: "fields", value: ExpressionUtils.array("String", [ExpressionUtils.field("userId")]) }, { name: "references", value: ExpressionUtils.array("String", [ExpressionUtils.field("id")]) }, { name: "onDelete", value: ExpressionUtils.literal("Cascade") }] }] as readonly AttributeApplication[],
+                    relation: { opposite: "refreshTokens", fields: ["userId"], references: ["id"], onDelete: "Cascade" }
+                }
+            },
+            idFields: ["id"],
+            uniqueFields: {
+                id: { type: "String" },
+                token: { type: "String" }
             }
         }
     } as const;

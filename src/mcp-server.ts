@@ -2,12 +2,18 @@ import { randomUUID } from "node:crypto";
 import { createMcpExpressApp } from "@modelcontextprotocol/express";
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import { McpServer, isInitializeRequest } from "@modelcontextprotocol/server";
+import type { AuthInfo } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import ts from "typescript";
-import { getDb } from "./db.js";
+import { getDb, getAuthDb } from "./db.js";
+import { userContext } from "./context.js";
+import { AuthMiddleware } from "./auth/AuthMiddleware.js";
+import { config } from "./config.js";
+import { schema } from "../zenstack/schema.js";
+import type { Request, Response } from "express";
 
 // ─── Helpers ───────────────────────────────────────────────────────────
 
@@ -46,43 +52,11 @@ const OP_TYPE_SUFFIX: Record<string, string> = {
 
 const VALID_OPERATIONS = Object.keys(OP_TYPE_SUFFIX);
 
-// Parse the generated input.ts to extract available model names (lowercase)
+// Get available model names from the schema (lowercase)
 function getAvailableModels(): string[] {
-  const inputPath = join(projectRoot, "zenstack", "input.ts");
-  const content = readFileSync(inputPath, "utf-8");
-  const modelRegex =
-    /export type (\w+)(FindManyArgs|FindUniqueArgs|FindFirstArgs)/g;
-  const models = new Set<string>();
-  let match;
-  while ((match = modelRegex.exec(content)) !== null) {
-    // Convert to lowercase for consistent comparison (Post -> post, User -> user)
-    models.add(match[1].charAt(0).toLowerCase() + match[1].slice(1));
-  }
-  return [...models].sort();
-}
-
-// Parse the generated input.ts to extract available operations per model
-function getAvailableOperations(): Record<string, string[]> {
-  const inputPath = join(projectRoot, "zenstack", "input.ts");
-  const content = readFileSync(inputPath, "utf-8");
-  const result: Record<string, string[]> = {};
-
-  for (const op of VALID_OPERATIONS) {
-    const suffix = OP_TYPE_SUFFIX[op];
-    const regex = new RegExp(
-      `export type (\\w+)${suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
-      "g",
-    );
-    let match;
-    while ((match = regex.exec(content)) !== null) {
-      const model = match[1];
-      const modelLower = model.charAt(0).toLowerCase() + model.slice(1);
-      if (!result[modelLower]) result[modelLower] = [];
-      result[modelLower].push(op);
-    }
-  }
-
-  return result;
+  return Object.keys(schema.models)
+    .map((m) => m.charAt(0).toLowerCase() + m.slice(1))
+    .sort();
 }
 
 // ─── Type Checking (check tool) ────────────────────────────────────────
@@ -164,7 +138,8 @@ async function executeQuery(
   operation: string,
   args: Record<string, unknown>,
 ): Promise<unknown> {
-  const db = getDb();
+  const userId = userContext.getStore();
+  const db = userId ? getAuthDb(userId) : getDb();
 
   // Access model dynamically (db.user, db.post, etc.)
   const modelAccess = (db as Record<string, unknown>)[model];
@@ -289,15 +264,9 @@ server.registerTool(
   },
   async () => {
     const zmodel = readZModel();
-    const operations = getAvailableOperations();
     const rules = getSchemaRules();
 
-    const apis = Object.entries(operations)
-      .map(
-        ([model, ops]) =>
-          `### ${model}\n${ops.map((o) => `- ${o}`).join("\n")}`,
-      )
-      .join("\n\n");
+    const apis = VALID_OPERATIONS.join("\n");
 
     const result = [
       "# ZModel Schema",
@@ -378,15 +347,13 @@ server.registerTool(
       };
     }
 
-    // Check operation is available for this model
-    const operations = getAvailableOperations();
-    const modelOps = operations[model] || [];
-    if (!modelOps.includes(operation)) {
+    // Check operation is available
+    if (!VALID_OPERATIONS.includes(operation)) {
       return {
         content: [
           {
             type: "text",
-            text: `Error: Operation "${operation}" is not available for model "${model}". Available: ${modelOps.join(", ")}`,
+            text: `Error: Operation "${operation}" is not available for model "${model}". Available: ${VALID_OPERATIONS.join(", ")}`,
           },
         ],
         isError: true,
@@ -472,44 +439,107 @@ server.registerTool(
 
 // ── Start Server ───────────────────────────────────────────────────────
 
-import type { Request, Response } from "./express-types";
+const db = getDb();
+const authMiddleware = new AuthMiddleware(db);
+
 const app = createMcpExpressApp();
 const transports: Map<string, NodeStreamableHTTPServerTransport> = new Map();
 
-app.post("/mcp", async (req: Request, res: Response) => {
-  const sessionId = req.headers["mcp-session-id"] as string | undefined;
+// Add JSON body parser and URL-encoded parser for OAuth form submissions
+import express from "express";
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-  if (sessionId && transports.has(sessionId)) {
-    // Reuse existing transport for this session
-    await transports.get(sessionId)!.handleRequest(req, res, req.body);
-  } else if (!sessionId && isInitializeRequest(req.body)) {
-    // New session: create transport and connect server
-    const transport: NodeStreamableHTTPServerTransport =
-      new NodeStreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
-        onsessioninitialized: (sid: string): void => {
-          transports.set(sid, transport);
-        },
-      });
-    transport.onclose = () => {
-      if (transport.sessionId) transports.delete(transport.sessionId);
-    };
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
-  } else {
-    res.status(400).json({
-      jsonrpc: "2.0",
-      error: {
-        code: -32000,
-        message:
-          "Invalid request: missing or invalid session ID, or not an initialize request",
-      },
-      id: null,
-    });
+// CORS headers
+app.use((req: Request, res: Response, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, mcp-session-id",
+  );
+  if (req.method === "OPTIONS") {
+    res.sendStatus(200);
+    return;
   }
+  next();
 });
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+// Mount OAuth routes (login page, authorize, token, register, revoke, metadata)
+app.use("/", authMiddleware.getRouter());
+
+// MCP endpoint - protected by bearer auth
+app.post(
+  "/mcp",
+  authMiddleware.getBearerAuthMiddleware(),
+  async (req: Request & { auth?: AuthInfo }, res: Response) => {
+    const userId = req.auth?.extra?.userId as string | undefined;
+
+    const handle = async () => {
+      const sessionId = req.headers["mcp-session-id"] as string | undefined;
+
+      if (sessionId && transports.has(sessionId)) {
+        // Reuse existing transport for this session
+        const transport = transports.get(sessionId)!;
+        // Pass auth info to transport
+        (req as any).auth = req.auth;
+        await transport.handleRequest(req, res, req.body);
+      } else if (!sessionId && isInitializeRequest(req.body)) {
+        // New session: create transport and connect server
+        const transport: NodeStreamableHTTPServerTransport =
+          new NodeStreamableHTTPServerTransport({
+            sessionIdGenerator: () => randomUUID(),
+            onsessioninitialized: (sid: string): void => {
+              transports.set(sid, transport);
+            },
+          });
+        transport.onclose = () => {
+          if (transport.sessionId) transports.delete(transport.sessionId);
+        };
+        await server.connect(transport);
+        // Pass auth info to transport
+        (req as any).auth = req.auth;
+        await transport.handleRequest(req, res, req.body);
+      } else {
+        res.status(400).json({
+          jsonrpc: "2.0",
+          error: {
+            code: -32000,
+            message:
+              "Invalid request: missing or invalid session ID, or not an initialize request",
+          },
+          id: null,
+        });
+      }
+    };
+
+    if (userId) {
+      await userContext.run(userId, handle);
+    } else {
+      await handle();
+    }
+  },
+);
+
+// Health check endpoint
+app.get("/health", (_req: Request, res: Response) => {
+  res.json({
+    status: "healthy",
+    activeSessions: transports.size,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+const PORT = config.port;
 app.listen(PORT, () => {
-  console.error(`ZenStack MCP server running on http://localhost:${PORT}/mcp`);
+  console.log(`
+🚀 ZenStack MCP server running at: ${config.baseUrl}
+📡 MCP endpoint: ${config.baseUrl}/mcp
+🔐 OAuth endpoints:
+   • Authorization: ${config.baseUrl}/oauth/authorize
+   • Token:         ${config.baseUrl}/oauth/token
+   • Register:      ${config.baseUrl}/oauth/register
+   • Metadata:      ${config.baseUrl}/.well-known/oauth-authorization-server
+   • Login Page:    ${config.baseUrl}/auth/login
+  `);
 });
