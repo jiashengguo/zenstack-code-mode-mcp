@@ -1,6 +1,6 @@
-# ZenStack V3 Remote MCP Server with Authorization
+# ZenStack Code Mode MCP Server with Authorization
 
-This repository contains a sample implementation of a remote Model-Controller-Presenter (MCP) server with authentication and authorization for ZenStack v3. It demonstrates how to set up an MCP server that can be accessed remotely, with user authentication and role-based access control.
+This repository contains a sample implementation of a remote MCP server with authentication and authorization for ZenStack v3. It demonstrates how to set up an MCP server that can be accessed remotely, with user authentication and role-based access control.
 
 ## Features
 
